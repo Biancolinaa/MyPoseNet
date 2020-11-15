@@ -1,12 +1,11 @@
 %%html
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+<script src="https://cdn.jsdelivr.net/gh/nicolaspanel/numjs@0.15.1/dist/numjs.min.js"></script>
 <pre id="output"></pre>
 <!-- <img id="image" src="https://storage.googleapis.com/tfjs-models/assets/posenet/skiing.jpg" /> -->
 <script>
   const output = document.getElementById('output');
-
-  output.textContent = 'Ciao!'
 
   function loadImage() {
     const image = new Image();
@@ -22,7 +21,25 @@
   }
 
   let _net = null;
-  
+  const times = [];
+  const scores = [];
+
+  async function estimate(image) {
+    const before = new Date();
+    const result = await _net.estimatePoses(image, {
+      flipHorizontal: false,
+      decodingMethod: 'single-person',
+      maxDetections: 1,
+      scoreThreshold: 0.1,
+      nmsRadius: 20.0,
+    });
+    return {
+      result,
+      score: result[0].score,
+      delta: new Date() - before,
+    };
+  }
+
   output.textContent = 'Loading...';
   posenet.load()
     .then((net) => {
@@ -30,16 +47,24 @@
       _net = net;
       return loadImage();
     })
-    .then((image) => {
+    .then(async (image) => {
       const input = tf.browser.fromPixels(image);
       output.textContent = 'Image ok, estimating...';
-      return _net.estimatePoses(input, {
-        flipHorizontal: false,
-        decodingMethod: 'single-person',
-        maxDetections: 1,
-        scoreThreshold: 0.1,
-        nmsRadius: 20.0,
-      });
-    }).then((result) => {
-      output.textContent = JSON.stringify(result)
+      
+      const results = [];
+      for (let i = 0; i < 100; i++) {
+        const { result, delta, score } = await estimate(input);
+        results.push(result);
+        times.push(delta);
+        scores.push(score);
+      }
+
+      return results;
+    }).then((results) => {
+      // output.textContent = JSON.stringify(results);
+      // output.textContent = `${times.length} - ${JSON.stringify(times.slice(0, 10))}`;
+
+      t = nj.array(times);
+      s = nj.array(scores);
+      output.textContent = `Media: ${t.mean()} ms\nSTD: ${t.std()} ms\nScore media: ${s.mean()}`;
     });
